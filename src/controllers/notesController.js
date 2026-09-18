@@ -4,7 +4,9 @@ import { Note } from '../models/note.js';
 export const getAllNotes = async (request, response, next) => {
   try {
     const { page, perPage, tag, search } = request.query;
-    const filter = {};
+    const filter = {
+      userId: request.user._id,
+    };
 
     if (tag) {
       filter.tag = tag;
@@ -39,7 +41,10 @@ export const getAllNotes = async (request, response, next) => {
 export const getNoteById = async (request, response, next) => {
   try {
     const { noteId } = request.params;
-    const note = await Note.findById(noteId);
+    const note = await Note.findOne({
+      _id: noteId,
+      userId: request.user._id,
+    });
 
     if (!note) {
       throw createHttpError(404, 'Note not found');
@@ -53,7 +58,10 @@ export const getNoteById = async (request, response, next) => {
 
 export const createNote = async (request, response, next) => {
   try {
-    const note = await Note.create(request.body);
+    const note = await Note.create({
+      ...request.body,
+      userId: request.user._id,
+    });
     response.status(201).json(note);
   } catch (error) {
     next(error);
@@ -63,7 +71,10 @@ export const createNote = async (request, response, next) => {
 export const deleteNote = async (request, response, next) => {
   try {
     const { noteId } = request.params;
-    const note = await Note.findByIdAndDelete(noteId);
+    const note = await Note.findOneAndDelete({
+      _id: noteId,
+      userId: request.user._id,
+    });
 
     if (!note) {
       throw createHttpError(404, 'Note not found');
@@ -78,10 +89,17 @@ export const deleteNote = async (request, response, next) => {
 export const updateNote = async (request, response, next) => {
   try {
     const { noteId } = request.params;
-    const note = await Note.findByIdAndUpdate(noteId, request.body, {
-      returnDocument: 'after',
-      runValidators: true,
-    });
+    const note = await Note.findOneAndUpdate(
+      {
+        _id: noteId,
+        userId: request.user._id,
+      },
+      request.body,
+      {
+        returnDocument: 'after',
+        runValidators: true,
+      },
+    );
 
     if (!note) {
       throw createHttpError(404, 'Note not found');
