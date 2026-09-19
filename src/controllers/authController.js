@@ -1,9 +1,19 @@
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import bcrypt from 'bcrypt';
+import handlebars from 'handlebars';
 import createHttpError from 'http-errors';
+import jwt from 'jsonwebtoken';
 import { isValidObjectId } from 'mongoose';
 import { Session } from '../models/session.js';
 import { User } from '../models/user.js';
 import { createSession, setSessionCookies } from '../services/auth.js';
+import { sendEmail } from '../utils/sendMail.js';
+
+const RESET_EMAIL_SUCCESS_MESSAGE = 'Password reset email sent successfully';
+const RESET_EMAIL_TEMPLATE_PATH = resolve(
+  'src/templates/reset-password-email.html',
+);
 
 const clearSessionCookies = (response) => {
   const cookieOptions = {
@@ -110,6 +120,95 @@ export const logoutUser = async (request, response, next) => {
 
     clearSessionCookies(response);
     response.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const requestResetEmail = async (request, response, next) => {
+  try {
+    const { email } = request.body;
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      response.status(200).json({
+        message: RESET_EMAIL_SUCCESS_MESSAGE,
+      });
+      return;
+    }
+
+    const token = jwt.sign(
+      {
+        sub: user._id.toString(),
+        email: user.email,
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: '15m',
+      },
+    );
+    const templateSource = await readFile(RESET_EMAIL_TEMPLATE_PATH, 'utf8');
+    const template = handlebars.compile(templateSource);
+    const frontendDomain = process.env.FRONTEND_DOMAIN.replace(/\/$/, '');
+    const resetLink = `${frontendDomain}/reset-password?token=${encodeURIComponent(token)}`;
+    const html = template({
+      name: user.username,
+      resetLink,
+    });
+
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: 'Reset your password',
+        html,
+      });
+    } catch {
+      throw createHttpError(
+        500,
+        'Failed to send the email, please try again later.',
+      );
+    }
+
+    response.status(200).json({
+      message: RESET_EMAIL_SUCCESS_MESSAGE,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const resetPassword = async (request, response, next) => {
+  try {
+    const { token, password } = request.body;
+    let payload;
+
+    try {
+      payload = jwt.verify(token, process.env.JWT_SECRET);
+    } catch {
+      throw createHttpError(401, 'Invalid or expired token');
+    }
+
+    if (typeof payload !== 'object' || !payload.sub || !payload.email) {
+      throw createHttpError(401, 'Invalid or expired token');
+    }
+
+    const user = isValidObjectId(payload.sub)
+      ? await User.findOne({
+          _id: payload.sub,
+          email: payload.email,
+        })
+      : null;
+
+    if (!user) {
+      throw createHttpError(404, 'User not found');
+    }
+
+    user.password = await bcrypt.hash(password, 10);
+    await user.save();
+
+    response.status(200).json({
+      message: 'Password reset successfully',
+    });
   } catch (error) {
     next(error);
   }
