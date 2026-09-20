@@ -28,9 +28,7 @@ const userSchema = new mongoose.Schema(
 );
 
 userSchema.pre('save', function () {
-  if (!this.username) {
-    this.username = this.email;
-  }
+  this.username = this.email;
 });
 
 userSchema.methods.toJSON = function () {
