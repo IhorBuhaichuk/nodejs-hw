@@ -13,12 +13,18 @@ export const updateUserAvatar = async (request, response, next) => {
       request.user._id,
     );
 
-    await User.findByIdAndUpdate(request.user._id, {
-      avatar: result.secure_url,
-    });
+    const user = await User.findByIdAndUpdate(
+      request.user._id,
+      {
+        avatar: result.secure_url,
+      },
+      {
+        returnDocument: 'after',
+      },
+    );
 
     response.status(200).json({
-      url: result.secure_url,
+      url: user.avatar,
     });
   } catch (error) {
     next(error);
